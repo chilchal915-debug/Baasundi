@@ -1,31 +1,126 @@
+
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
+<meta charset="UTF-8">
 <title>Private Chat</title>
-<link rel="stylesheet" href="style.css">
+
 <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+
+<style>
+body{
+  margin:0;
+  font-family:Arial, sans-serif;
+  background:#0f0f0f;
+  color:#fff;
+  display:flex;
+  flex-direction:column;
+  height:100vh;
+}
+.header{
+  text-align:center;
+  padding:15px;
+  font-size:22px;
+  background:#1f1f1f;
+}
+#chat{
+  flex:1;
+  padding:10px;
+  overflow-y:auto;
+}
+#chat p{
+  margin:5px 0;
+}
+.input-box{
+  display:flex;
+  background:#1f1f1f;
+}
+#msg{
+  flex:1;
+  padding:10px;
+  border:none;
+  outline:none;
+  font-size:16px;
+}
+button{
+  padding:10px 15px;
+  border:none;
+  background:#ff4d6d;
+  color:#fff;
+  font-size:16px;
+  cursor:pointer;
+}
+</style>
 </head>
+
 <body>
 
-<div class="bg">Lucifer ❤️ Bassu</div>
-
-<h3 id="me"></h3>
-
-<p>
-Your ID: <b><span id="myid">connecting...</span></b>
-</p>
-
-<input id="connectId" placeholder="Partner ID">
-<br>
-<button onclick="connect()">Connect</button>
-
-<hr>
+<div class="header">Lucifer ❤️ Bassu</div>
 
 <div id="chat"></div>
 
-<input id="msg" placeholder="Type love...">
-<br>
-<button onclick="send()">Send</button>
+<div class="input-box">
+  <input id="msg" placeholder="Type message..." autocomplete="off">
+  <button onclick="send()">Send</button>
+</div>
 
 <script>
-const user = session
+let peer;
+let conn;
+
+const HOST_ID = "lucifer-bassu-room";
+
+// Try to become host
+peer = new Peer(HOST_ID);
+
+peer.on("open", () => {
+  addMsg("🟢 Waiting for partner...");
+});
+
+// If ID already taken → become client
+peer.on("error", err => {
+  if (err.type === "unavailable-id") {
+    peer = new Peer();
+
+    peer.on("open", () => {
+      conn = peer.connect(HOST_ID);
+
+      conn.on("open", () => {
+        addMsg("🟢 Connected");
+        setup();
+      });
+    });
+  }
+});
+
+// Host receives connection
+peer.on("connection", c => {
+  conn = c;
+  addMsg("🟢 Connected");
+  setup();
+});
+
+function setup(){
+  conn.on("data", msg => {
+    addMsg("❤️ Partner: " + msg);
+  });
+}
+
+function send(){
+  const input = document.getElementById("msg");
+  if(input.value && conn && conn.open){
+    conn.send(input.value);
+    addMsg("You: " + input.value);
+    input.value="";
+  }
+}
+
+function addMsg(text){
+  const chat = document.getElementById("chat");
+  chat.innerHTML += "<p>" + text + "</p>";
+  chat.scrollTop = chat.scrollHeight;
+}
+</script>
+
+</body>
+</html>
