@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Private Login</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<h2>Lucifer ❤️ Bassu</h2>
+
+<input id="user" placeholder="Username">
+<br>
+<input id="pass" type="password" placeholder="Password">
+<br><br>
+<button onclick="login()">Login</button>
+
+<script>
+const SAME_PASSWORD = "bassundi@123"; 
+// 👉 baad me sirf tum change kar sakte ho
+
+function login(){
+  let u = user.value;
+  let p = pass.value;
+
+  if((u !== "Lucifer.rootx" && u !== "bassu") || p !== SAME_PASSWORD){
+    alert("Access Denied");
+    return;
+  }
+  sessionStorage.setItem("user",u);
+  location.href="chat.html";
+}
+</script>
+
+</body>
+</html>
