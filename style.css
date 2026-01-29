@@ -1,0 +1,75 @@
+body{
+  margin:0;
+  padding:0;
+  min-height:100vh;
+  background: linear-gradient(135deg,#ff4e8d,#ff9a9e);
+  font-family: cursive;
+  text-align:center;
+  color:white;
+}
+
+/* Background romantic text */
+.bg{
+  position:fixed;
+  top:40%;
+  width:100%;
+  font-size:60px;
+  opacity:0.12;
+  pointer-events:none;
+}
+
+/* Inputs & buttons */
+input{
+  padding:12px;
+  width:80%;
+  max-width:300px;
+  border:none;
+  border-radius:25px;
+  outline:none;
+  margin:6px;
+  font-size:16px;
+}
+
+button{
+  padding:12px 30px;
+  border:none;
+  border-radius:25px;
+  background:#fff;
+  color:#ff4e8d;
+  font-size:16px;
+  cursor:pointer;
+}
+
+button:hover{
+  opacity:0.9;
+}
+
+/* Chat box */
+#chat{
+  min-height:40px;
+  margin:15px auto;
+  width:90%;
+  max-width:400px;
+  font-size:18px;
+  animation: fade 0.5s;
+}
+
+@keyframes fade{
+  from{opacity:0;}
+  to{opacity:1;}
+}
+
+/* Small heart animation */
+body::after{
+  content:"❤️";
+  position:fixed;
+  bottom:20px;
+  right:20px;
+  font-size:30px;
+  animation: float 2s infinite alternate;
+}
+
+@keyframes float{
+  from{transform:translateY(0);}
+  to{transform:translateY(-10px);}
+}
