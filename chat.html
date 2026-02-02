@@ -5,7 +5,6 @@
 <title>Private Chat</title>
 
 <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
-
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
 <style>
@@ -33,135 +32,178 @@ body{
   font-size:18px;
 }
 
-#chat p{
+.msg{
   margin:8px 0;
-  word-wrap:break-word;
+}
+
+.msg img, .msg video, .msg audio{
+  max-width:220px;
+  border-radius:10px;
+  margin-top:5px;
 }
 
 .input-box{
   display:flex;
+  flex-wrap:wrap;
+  gap:6px;
   background:#1f1f1f;
   padding:8px;
 }
 
 #msg{
   flex:1;
-  padding:14px;
+  padding:12px;
   border:none;
   outline:none;
-  font-size:18px;
+  font-size:16px;
   border-radius:8px;
 }
 
 button{
-  margin-left:8px;
-  padding:14px 18px;
+  padding:12px;
   border:none;
   background:#ff4d6d;
   color:#fff;
-  font-size:18px;
+  font-size:16px;
   border-radius:8px;
   cursor:pointer;
+}
+
+.file-btn{
+  background:#333;
 }
 </style>
 </head>
 
 <body>
 
-<div class="header">Lucifer ❤️ Bassu</div>
+<div class="header">Private Chat</div>
 
 <div id="chat"></div>
 
 <div class="input-box">
-  <input id="msg" placeholder="Type message..." autocomplete="off">
-  <button onclick="send()">Send</button>
+  <input id="msg" placeholder="Type message...">
+  <button onclick="sendText()">Send</button>
+
+  <input type="file" id="imgInput" accept="image/*" hidden>
+  <button class="file-btn" onclick="imgInput.click()">📷</button>
+
+  <input type="file" id="videoInput" accept="video/*" hidden>
+  <button class="file-btn" onclick="videoInput.click()">🎬</button>
+
+  <input type="file" id="audioInput" accept="audio/*" hidden>
+  <button class="file-btn" onclick="audioInput.click()">🎵</button>
+
+  <button id="recordBtn" class="file-btn">🎤</button>
 </div>
 
 <script>
-let peer;
-let conn;
-const HOST_ID = "lucifer-bassu-room";
+const chat = document.getElementById("chat");
 
-// page load hote hi keyboard open
-window.onload = () => {
-  document.getElementById("msg").focus();
-};
-
-// Enter key se bhi send ho
-document.getElementById("msg").addEventListener("keydown", e=>{
-  if(e.key === "Enter") send();
-});
-
-// Try to become host
-peer = new Peer(HOST_ID);
-
-peer.on("open", () => {
-  addMsg("🟢 Waiting for partner...");
-});
-
-// If ID already taken → become client
-peer.on("error", err => {
-  if (err.type === "unavailable-id") {
-    peer = new Peer();
-
-    peer.on("open", () => {
-      conn = peer.connect(HOST_ID);
-
-      conn.on("open", () => {
-        addMsg("🟢 Connected");
-        setup();
-      });
-    });
-  }
-});
-
-// Host receives connection
-peer.on("connection", c => {
-  conn = c;
-  addMsg("🟢 Connected");
-  setup();
-});
-
-function setup(){
-  conn.on("data", msg => {
-    addMsg("❤️ Partner: " + msg);
-    focusInput();
-  });
-}
-
-function send(){
-  const input = document.getElementById("msg");
-
-  if(!conn || !conn.open){
-    addMsg("⚠️ Not connected yet");
-    return;
-  }
-
-  const text = input.value.trim();
-  if(text === "") return;
-
-  conn.send(text);
-  addMsg("You: " + text);
-  input.value="";
-  focusInput();
-}
-
-function addMsg(text){
-  const chat = document.getElementById("chat");
-  chat.innerHTML += "<p>" + text + "</p>";
+function addMessage(html){
+  const div = document.createElement("div");
+  div.className = "msg";
+  div.innerHTML = html;
+  chat.appendChild(div);
   chat.scrollTop = chat.scrollHeight;
 }
 
-function focusInput(){
-  const input = document.getElementById("msg");
-  input.focus();
+/* ---------- PEER SETUP ---------- */
 
-  // keyboard open hone par bhi last messages dikhen
-  setTimeout(()=>{
-    document.getElementById("chat").scrollTop =
-      document.getElementById("chat").scrollHeight;
-  },100);
+const peer = new Peer();
+let conn;
+
+peer.on("open", id=>{
+  const other = prompt("Enter other user ID");
+  if(other){
+    conn = peer.connect(other);
+    setupConn();
+  }
+});
+
+peer.on("connection", c=>{
+  conn = c;
+  setupConn();
+});
+
+function setupConn(){
+  conn.on("data", data=>{
+    if(data.type === "text"){
+      addMessage("👤 "+data.text);
+    }
+    if(data.type === "image"){
+      addMessage(`<img src="${data.data}">`);
+    }
+    if(data.type === "video"){
+      addMessage(`<video controls src="${data.data}"></video>`);
+    }
+    if(data.type === "audio"){
+      addMessage(`<audio controls src="${data.data}"></audio>`);
+    }
+  });
 }
+
+/* ---------- TEXT ---------- */
+
+function sendText(){
+  const m = msg.value.trim();
+  if(!m || !conn) return;
+  conn.send({type:"text", text:m});
+  addMessage("🧑 "+m);
+  msg.value="";
+}
+
+/* ---------- FILE SEND ---------- */
+
+function sendFile(file, type){
+  const reader = new FileReader();
+  reader.onload = ()=>{
+    conn.send({type:type, data:reader.result});
+    if(type==="image") addMessage(`<img src="${reader.result}">`);
+    if(type==="video") addMessage(`<video controls src="${reader.result}"></video>`);
+    if(type==="audio") addMessage(`<audio controls src="${reader.result}"></audio>`);
+  };
+  reader.readAsDataURL(file);
+}
+
+imgInput.onchange = e=>{
+  if(conn) sendFile(e.target.files[0],"image");
+};
+
+videoInput.onchange = e=>{
+  if(conn) sendFile(e.target.files[0],"video");
+};
+
+audioInput.onchange = e=>{
+  if(conn) sendFile(e.target.files[0],"audio");
+};
+
+/* ---------- VOICE RECORD ---------- */
+
+let recorder;
+let chunks = [];
+
+recordBtn.onclick = async ()=>{
+  if(!recorder){
+    const stream = await navigator.mediaDevices.getUserMedia({audio:true});
+    recorder = new MediaRecorder(stream);
+
+    recorder.ondataavailable = e=>chunks.push(e.data);
+
+    recorder.onstop = ()=>{
+      const blob = new Blob(chunks,{type:"audio/webm"});
+      chunks=[];
+      sendFile(blob,"audio");
+      recorder=null;
+      recordBtn.textContent="🎤";
+    };
+
+    recorder.start();
+    recordBtn.textContent="⏹";
+  } else {
+    recorder.stop();
+  }
+};
 </script>
 
 </body>
