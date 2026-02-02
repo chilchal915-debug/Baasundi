@@ -1,279 +1,296 @@
-
 <!DOCTYPE html>
 <html>
 <head>
 <meta charset="UTF-8">
-<title>Private Chat</title>
+<title>P2P Auto Chat</title>
 <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 
 <style>
-body{margin:0;font-family:Arial;background:#0f0f0f;color:white}
+:root{
+ --bg:#0f0f0f; --panel:#1f1f1f; --me:#ff4d6d; --them:#333; --text:#fff;
+}
+.light{
+ --bg:#f5f5f5; --panel:#fff; --them:#e4e4e4; --text:#000;
+}
+body{margin:0;font-family:Arial;background:var(--bg);color:var(--text)}
 #loginBox{height:100vh;display:flex;flex-direction:column;justify-content:center;padding:20px;gap:10px}
-input{padding:14px;font-size:16px;border-radius:8px;border:none}
-button{padding:12px;border:none;border-radius:8px;background:#ff4d6d;color:white}
+input,button{padding:14px;font-size:16px;border-radius:10px;border:none}
+button{background:#ff4d6d;color:white}
 
 #chatUI{display:none;height:100vh;flex-direction:column}
-.header{background:#1f1f1f;padding:12px;text-align:center}
-
-.status{display:flex;justify-content:space-between;padding:6px 12px;font-size:13px}
-.dot{width:10px;height:10px;border-radius:50%;display:inline-block;opacity:.25}
-.dot.on{opacity:1}
-.green{background:#00ff66}
-.red{background:#ff3333}
-
-#heart{opacity:.3}
-.heart-on{opacity:1;text-shadow:0 0 8px #ff4d6d}
+.header{background:var(--panel);padding:10px;display:flex;justify-content:space-between}
 
 #chat{flex:1;overflow-y:auto;padding:10px}
-
-.bubble{max-width:70%;padding:10px;border-radius:12px;margin:6px 0;word-wrap:break-word}
-.me{background:#ff4d6d;margin-left:auto}
-.them{background:#333}
+.bubble{max-width:75%;padding:10px;border-radius:14px;margin:6px 0;word-wrap:break-word}
+.me{background:var(--me);margin-left:auto;color:white}
+.them{background:var(--them)}
 .meta{font-size:11px;opacity:.7;text-align:right;margin-top:4px}
 
-.input-box{display:flex;gap:6px;padding:8px;background:#1f1f1f;position:sticky;bottom:0}
-.file-btn{background:#333}
-img{max-width:100%;border-radius:8px}
+.input-box{display:flex;gap:6px;padding:8px;background:var(--panel)}
+img,audio{max-width:100%;border-radius:8px}
+
+#emojiBox{display:none;background:var(--panel);padding:8px;font-size:22px}
 </style>
 </head>
 
 <body>
 
 <div id="loginBox">
-<h2>Login</h2>
-<input id="usernameInput" placeholder="Username">
-<input id="passwordInput" type="password" placeholder="Password">
-<button type="button" id="loginBtn">Login</button>
+<h3>P2P Chat</h3>
+<input id="user" placeholder="Username">
+<input id="pass" type="password" placeholder="Password">
+<input id="room" placeholder="Room name">
+<button id="go">Enter</button>
 </div>
 
 <div id="chatUI">
-<div class="header">Private Chat</div>
-
-<div class="status">
-<div><span id="bassuDot" class="dot green"></span> bassu</div>
-<div id="heart">❤️ Online</div>
-<div><span id="luciferDot" class="dot red"></span> lucifer.rootx</div>
+<div class="header">
+<span id="title"></span>
+<div>
+<button id="themeBtn">🌓</button>
+<button id="emojiBtn">😊</button>
+</div>
 </div>
 
 <div id="chat"></div>
+<div id="emojiBox">😀 😁 😂 😍 😎 😢 😡 👍 ❤️ 🔥 🎉</div>
 
 <div class="input-box">
-<input id="msg" placeholder="Type">
-<button type="button" id="sendBtn">Send</button>
-<input type="file" id="fileInput" hidden accept="image/*">
-<button type="button" class="file-btn" id="imgBtn">📷</button>
+<input id="msg" placeholder="Message">
+<button id="send">Send</button>
+<button id="voiceBtn">🎤</button>
+<input type="file" id="file" hidden accept="image/*">
+<button id="imgBtn">📷</button>
 </div>
 </div>
 
 <script>
 
-/* ---------- ELEMENTS ---------- */
+/* ---------- HASH LOGIN ---------- */
 
-const loginBox = document.getElementById("loginBox");
-const chatUI = document.getElementById("chatUI");
-const usernameInput = document.getElementById("usernameInput");
-const passwordInput = document.getElementById("passwordInput");
-const chat = document.getElementById("chat");
-const msg = document.getElementById("msg");
-const heart = document.getElementById("heart");
-const bassuDot = document.getElementById("bassuDot");
-const luciferDot = document.getElementById("luciferDot");
-const fileInput = document.getElementById("fileInput");
+async function hash(t){
+ const b=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(t));
+ return btoa(String.fromCharCode(...new Uint8Array(b)));
+}
 
-/* ---------- USERS ---------- */
+async function loginOK(u,p){
+ const k="u_"+u;
+ const h=await hash(p);
+ if(!localStorage[k]) localStorage[k]=h;
+ return localStorage[k]===h;
+}
 
-const USERS={
- "lucifer.rootx":"basundi@123",
- "bassu":"basundi@123"
-};
+/* ---------- STATE ---------- */
 
-let me;
-const STORE_KEY="snap_history";
+let me, room, peer, conns={}, isHost=false;
 
 /* ---------- LOGIN ---------- */
 
-loginBtn.onclick = doLogin;
-
-function doLogin(){
- const u=usernameInput.value.toLowerCase().trim();
- if(USERS[u]===passwordInput.value){
-   me=u;
+go.onclick=async()=>{
+ if(await loginOK(user.value,pass.value)){
+   me=user.value.trim().toLowerCase();
+   room=room.value.trim().toLowerCase();
+   title.textContent="Room: "+room;
    loginBox.style.display="none";
    chatUI.style.display="flex";
-   loadHistory();
+   loadHist();
    startPeer();
- } else alert("Invalid login");
+ } else alert("Wrong password");
+};
+
+/* ---------- STORAGE ---------- */
+
+const sk=()=> "hist_"+room+"_"+me;
+const saveHist=()=>localStorage.setItem(sk(),chat.innerHTML);
+const loadHist=()=>chat.innerHTML=localStorage.getItem(sk())||"";
+
+/* ---------- PEER AUTO HOST ---------- */
+
+function startPeer(){
+
+ const tryId = room+"_HOST";
+
+ peer=new Peer(tryId,{host:"peerjs.com",port:443,secure:true});
+
+ peer.on("open",()=>{ isHost=true; });
+
+ peer.on("error",()=>{
+   peer=new Peer(room+"_"+Math.random().toString(36).slice(2,6),
+     {host:"peerjs.com",port:443,secure:true});
+
+   peer.on("open",()=>{
+     const c=peer.connect(room+"_HOST");
+     c.on("open",()=>bind(c));
+   });
+ });
+
+ peer.on("connection",bind);
 }
 
-/* ---------- HISTORY ---------- */
-
-function saveHistory(){
- localStorage.setItem(STORE_KEY,chat.innerHTML);
-}
-function loadHistory(){
- chat.innerHTML=localStorage.getItem(STORE_KEY)||"";
+function bind(c){
+ conns[c.peer]=c;
+ c.on("data",recv);
+ c.on("close",()=>delete conns[c.peer]);
 }
 
-/* ---------- ENCRYPT ---------- */
+/* ---------- SEND ALL ---------- */
+
+function sendAll(o){
+ Object.values(conns).forEach(c=>c.open&&c.send(o));
+}
+
+/* ---------- ENCODE ---------- */
 
 const enc=t=>btoa(unescape(encodeURIComponent(t)));
 const dec=t=>decodeURIComponent(escape(atob(t)));
 
-/* ---------- PEER ---------- */
+/* ---------- RECEIVE ---------- */
 
-let peer,conn,retryTimer;
+function recv(d){
 
-function startPeer(){
+ if(d.type==="msg"){
+   add(dec(d.text),false,d.id,d.user);
+   sendAll({type:"seen",id:d.id});
+ }
 
- const myId = me==="bassu" ? "peerA" : "peerB";
- const otherId = me==="bassu" ? "peerB" : "peerA";
+ if(d.type==="seen") setMeta(d.id,"👁");
 
- peer=new Peer(myId,{
-   host:"peerjs.com",
-   port:443,
-   secure:true
- });
-
- peer.on("open",()=>{
-   tryConnect(otherId);
- });
-
- peer.on("connection",c=>{
-   bindConn(c);
- });
-
- peer.on("disconnected",scheduleReconnect);
- peer.on("error",scheduleReconnect);
+ if(d.type==="edit") editMsg(d.id,dec(d.text));
+ if(d.type==="del") delMsg(d.id);
 }
 
-function tryConnect(otherId){
- if(conn?.open) return;
- const c=peer.connect(otherId);
- c.on("open",()=>bindConn(c));
+/* ---------- UI MSG ---------- */
+
+function ts(){
+ return new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
 }
 
-function scheduleReconnect(){
- setOnline(false);
- clearTimeout(retryTimer);
- retryTimer=setTimeout(()=>{
-   tryConnect(me==="bassu" ? "peerB":"peerA");
- },1500);
-}
-
-function bindConn(c){
- conn=c;
- setupConn();
-}
-
-/* ---------- CONNECTION ---------- */
-
-function setupConn(){
- setOnline(true);
-
- conn.on("data",d=>{
-   if(d.type==="msg"){
-     addBubble(dec(d.text),false,d.id);
-     conn.send({type:"delivered",id:d.id});
-   }
-   if(d.type==="delivered") setMeta(d.id,"✓✓");
-   if(d.type==="seen") seenAndDelete(d.id);
-   if(d.type==="typing") showTyping(d.user,d.on);
- });
-
- conn.on("close",scheduleReconnect);
-}
-
-/* ---------- STATUS ---------- */
-
-function setOnline(on){
- heart.classList.toggle("heart-on",on);
-}
-
-/* ---------- TYPING ---------- */
-
-msg.oninput=()=>{
- if(!conn?.open) return;
- conn.send({type:"typing",user:me,on:true});
- clearTimeout(window.tt);
- window.tt=setTimeout(()=>{
-   conn?.send({type:"typing",user:me,on:false});
- },600);
-};
-
-function showTyping(user,on){
- if(user==="bassu") bassuDot.classList.toggle("on",on);
- else luciferDot.classList.toggle("on",on);
-}
-
-/* ---------- BUBBLES ---------- */
-
-function addBubble(text,isMe,id){
+function add(t,meFlag,id,u){
  const b=document.createElement("div");
- b.className="bubble "+(isMe?"me":"them");
+ b.className="bubble "+(meFlag?"me":"them");
  b.dataset.id=id;
- b.innerHTML=text+`<div class="meta" id="m${id}">${isMe?"✓":""}</div>`;
+ b.innerHTML=t+`<div class="meta" id="m${id}">
+ ${meFlag?"✓":u} • ${ts()}</div>`;
+
+ if(meFlag){
+   b.oncontextmenu=e=>{
+     e.preventDefault();
+     const nt=prompt("Edit:",t);
+     if(nt){ editMsg(id,nt); sendAll({type:"edit",id,text:enc(nt)}); }
+   };
+   b.ondblclick=()=>{
+     delMsg(id);
+     sendAll({type:"del",id});
+   };
+ }
+
  chat.appendChild(b);
  chat.scrollTop=chat.scrollHeight;
- saveHistory();
-
- if(!isMe){
-   conn?.send({type:"seen",id});
- }
+ saveHist();
 }
 
-function setMeta(id,txt){
- const m=document.getElementById("m"+id);
- if(m) m.textContent=txt;
+function editMsg(id,t){
+ const el=document.querySelector(`[data-id='${id}']`);
+ if(el) el.childNodes[0].nodeValue=t;
+ saveHist();
 }
 
-function seenAndDelete(id){
- setMeta(id,"👁");
- setTimeout(()=>removeMsg(id),1200);
-}
-
-function removeMsg(id){
+function delMsg(id){
  document.querySelector(`[data-id='${id}']`)?.remove();
- saveHistory();
+ saveHist();
 }
 
-/* ---------- SEND ---------- */
+function setMeta(id,x){
+ const m=document.getElementById("m"+id);
+ if(m) m.textContent=x+" • "+ts();
+}
 
-sendBtn.onclick = sendText;
+/* ---------- SEND TEXT ---------- */
+
+send.onclick=sendText;
+msg.onkeypress=e=>{ if(e.key==="Enter") sendText(); };
 
 function sendText(){
- if(!conn?.open){
-   alert("Not connected yet");
-   return;
- }
  const t=msg.value.trim();
  if(!t) return;
  const id=Date.now();
- conn.send({type:"msg",text:enc(t),id});
- addBubble(t,true,id);
+ add(t,true,id,me);
+ sendAll({type:"msg",text:enc(t),id,user:me});
  msg.value="";
 }
 
-msg.addEventListener("keypress",e=>{
- if(e.key==="Enter") sendText();
-});
+/* ---------- IMAGE RESIZE ---------- */
 
-/* ---------- IMAGE ---------- */
+imgBtn.onclick=()=>file.click();
 
-imgBtn.onclick = ()=>fileInput.click();
-
-fileInput.onchange=e=>{
+file.onchange=e=>{
  const f=e.target.files[0];
- if(!f||!conn?.open) return;
+ if(!f) return;
+ const img=new Image();
  const r=new FileReader();
- r.onload=()=>{
-   const html=`<img src="${r.result}">`;
+
+ r.onload=ev=>img.src=ev.target.result;
+
+ img.onload=()=>{
+   const c=document.createElement("canvas");
+   const max=900;
+   let w=img.width,h=img.height;
+   if(w>max){ h*=max/w; w=max; }
+   c.width=w; c.height=h;
+   c.getContext("2d").drawImage(img,0,0,w,h);
+
+   const data=c.toDataURL("image/jpeg",0.7);
+   const html=`<img src="${data}">`;
    const id=Date.now();
-   conn.send({type:"msg",text:enc(html),id});
-   addBubble(html,true,id);
+   add(html,true,id,me);
+   sendAll({type:"msg",text:enc(html),id,user:me});
  };
+
  r.readAsDataURL(f);
 };
+
+/* ---------- VOICE ---------- */
+
+let rec, chunks=[];
+voiceBtn.onclick=async()=>{
+ if(!rec){
+   const s=await navigator.mediaDevices.getUserMedia({audio:true});
+   rec=new MediaRecorder(s);
+   rec.ondataavailable=e=>chunks.push(e.data);
+   rec.onstop=()=>{
+     const blob=new Blob(chunks,{type:"audio/webm"});
+     chunks=[];
+     const r=new FileReader();
+     r.onload=()=>{
+       const html=`<audio controls src="${r.result}"></audio>`;
+       const id=Date.now();
+       add(html,true,id,me);
+       sendAll({type:"msg",text:enc(html),id,user:me});
+     };
+     r.readAsDataURL(blob);
+   };
+   rec.start();
+   voiceBtn.textContent="⏹";
+ } else {
+   rec.stop();
+   rec=null;
+   voiceBtn.textContent="🎤";
+ }
+};
+
+/* ---------- EMOJI ---------- */
+
+emojiBtn.onclick=()=>emojiBox.style.display=
+ emojiBox.style.display==="block"?"none":"block";
+
+emojiBox.onclick=e=>{
+ if(e.target.textContent) msg.value+=e.target.textContent;
+};
+
+/* ---------- THEME ---------- */
+
+themeBtn.onclick=()=>document.body.classList.toggle("light");
 
 </script>
 </body>
