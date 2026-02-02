@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html>
 <head>
@@ -43,7 +44,7 @@ img{max-width:100%;border-radius:8px}
 <h2>Login</h2>
 <input id="usernameInput" placeholder="Username">
 <input id="passwordInput" type="password" placeholder="Password">
-<button onclick="doLogin()">Login</button>
+<button type="button" id="loginBtn">Login</button>
 </div>
 
 <div id="chatUI">
@@ -59,13 +60,27 @@ img{max-width:100%;border-radius:8px}
 
 <div class="input-box">
 <input id="msg" placeholder="Type">
-<button onclick="sendText()">Send</button>
+<button type="button" id="sendBtn">Send</button>
 <input type="file" id="fileInput" hidden accept="image/*">
-<button class="file-btn" onclick="fileInput.click()">📷</button>
+<button type="button" class="file-btn" id="imgBtn">📷</button>
 </div>
 </div>
 
 <script>
+
+/* ---------- ELEMENTS ---------- */
+
+const loginBox = document.getElementById("loginBox");
+const chatUI = document.getElementById("chatUI");
+const usernameInput = document.getElementById("usernameInput");
+const passwordInput = document.getElementById("passwordInput");
+const chat = document.getElementById("chat");
+const msg = document.getElementById("msg");
+const heart = document.getElementById("heart");
+const bassuDot = document.getElementById("bassuDot");
+const luciferDot = document.getElementById("luciferDot");
+const fileInput = document.getElementById("fileInput");
+
 /* ---------- USERS ---------- */
 
 const USERS={
@@ -77,6 +92,8 @@ let me;
 const STORE_KEY="snap_history";
 
 /* ---------- LOGIN ---------- */
+
+loginBtn.onclick = doLogin;
 
 function doLogin(){
  const u=usernameInput.value.toLowerCase().trim();
@@ -108,15 +125,26 @@ const dec=t=>decodeURIComponent(escape(atob(t)));
 let peer,conn,retryTimer;
 
 function startPeer(){
+
  const myId = me==="bassu" ? "peerA" : "peerB";
  const otherId = me==="bassu" ? "peerB" : "peerA";
 
- peer=new Peer(myId);
+ peer=new Peer(myId,{
+   host:"peerjs.com",
+   port:443,
+   secure:true
+ });
 
- peer.on("open",()=>tryConnect(otherId));
- peer.on("connection",c=>bindConn(c));
- peer.on("disconnected",reconnect);
- peer.on("error",reconnect);
+ peer.on("open",()=>{
+   tryConnect(otherId);
+ });
+
+ peer.on("connection",c=>{
+   bindConn(c);
+ });
+
+ peer.on("disconnected",scheduleReconnect);
+ peer.on("error",scheduleReconnect);
 }
 
 function tryConnect(otherId){
@@ -125,12 +153,11 @@ function tryConnect(otherId){
  c.on("open",()=>bindConn(c));
 }
 
-function reconnect(){
+function scheduleReconnect(){
  setOnline(false);
  clearTimeout(retryTimer);
  retryTimer=setTimeout(()=>{
-   peer.reconnect();
-   startPeer();
+   tryConnect(me==="bassu" ? "peerB":"peerA");
  },1500);
 }
 
@@ -154,7 +181,7 @@ function setupConn(){
    if(d.type==="typing") showTyping(d.user,d.on);
  });
 
- conn.on("close",reconnect);
+ conn.on("close",scheduleReconnect);
 }
 
 /* ---------- STATUS ---------- */
@@ -169,7 +196,9 @@ msg.oninput=()=>{
  if(!conn?.open) return;
  conn.send({type:"typing",user:me,on:true});
  clearTimeout(window.tt);
- window.tt=setTimeout(()=>conn?.send({type:"typing",user:me,on:false}),600);
+ window.tt=setTimeout(()=>{
+   conn?.send({type:"typing",user:me,on:false});
+ },600);
 };
 
 function showTyping(user,on){
@@ -200,9 +229,7 @@ function setMeta(id,txt){
 
 function seenAndDelete(id){
  setMeta(id,"👁");
- setTimeout(()=>{
-   removeMsg(id);
- },1200);
+ setTimeout(()=>removeMsg(id),1200);
 }
 
 function removeMsg(id){
@@ -212,8 +239,13 @@ function removeMsg(id){
 
 /* ---------- SEND ---------- */
 
+sendBtn.onclick = sendText;
+
 function sendText(){
- if(!conn?.open) return;
+ if(!conn?.open){
+   alert("Not connected yet");
+   return;
+ }
  const t=msg.value.trim();
  if(!t) return;
  const id=Date.now();
@@ -222,7 +254,13 @@ function sendText(){
  msg.value="";
 }
 
+msg.addEventListener("keypress",e=>{
+ if(e.key==="Enter") sendText();
+});
+
 /* ---------- IMAGE ---------- */
+
+imgBtn.onclick = ()=>fileInput.click();
 
 fileInput.onchange=e=>{
  const f=e.target.files[0];
