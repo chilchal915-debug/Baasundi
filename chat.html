@@ -1,167 +1,172 @@
-<!DOCTYPE html>
-<html>
-<head>
-<meta charset="UTF-8">
-<title>2 User Direct Chat</title>
-<script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
-<meta name="viewport" content="width=device-width, initial-scale=1">
-
-<style>
-body{margin:0;font-family:Arial;background:#111;color:white}
-#login{height:100vh;display:flex;flex-direction:column;justify-content:center;padding:20px;gap:10px}
-input,button{padding:14px;border:none;border-radius:10px;font-size:16px}
-button{background:#ff4d6d;color:white}
-#chatUI{display:none;height:100vh;flex-direction:column}
-.header{background:#222;padding:10px;text-align:center}
-#chat{flex:1;overflow:auto;padding:10px}
-.bubble{max-width:75%;padding:10px;border-radius:14px;margin:6px 0}
-.me{background:#ff4d6d;margin-left:auto}
-.them{background:#333}
-.input{display:flex;gap:6px;padding:8px;background:#222}
-img,audio{max-width:100%}
-</style>
-</head>
-
-<body>
-
-<div id="login">
-<h3>Private Chat</h3>
-<input id="user" placeholder="Username (bassu / lucifer)">
-<button id="go">Enter</button>
-</div>
-
-<div id="chatUI">
-<div class="header" id="status">Connecting...</div>
-<div id="chat"></div>
-<div class="input">
-<input id="msg" placeholder="Message">
-<button id="send">Send</button>
-<button id="voice">🎤</button>
-<input type="file" id="file" hidden accept="image/*">
-<button id="img">📷</button>
-</div>
-</div>
-
 <script>
 
 let me, other, peer, conn;
+let retryTimer = null;
 
-go.onclick=()=>{
- me=user.value.toLowerCase().trim();
+go.onclick = () => {
+  me = user.value.toLowerCase().trim();
 
- if(me!=="bassu" && me!=="lucifer"){
-   alert("Use bassu or lucifer");
-   return;
- }
+  if (me !== "bassu" && me !== "lucifer") {
+    alert("Use bassu or lucifer");
+    return;
+  }
 
- other = me==="bassu" ? "lucifer" : "bassu";
+  other = me === "bassu" ? "lucifer" : "bassu";
 
- login.style.display="none";
- chatUI.style.display="flex";
+  login.style.display = "none";
+  chatUI.style.display = "flex";
 
- startPeer();
+  startPeer();
 };
 
-function startPeer(){
+function startPeer() {
 
- peer=new Peer(me,{
-   host:"peerjs.com",
-   port:443,
-   secure:true
- });
+  peer = new Peer(me, {
+    host: "peerjs.com",
+    port: 443,
+    secure: true
+  });
 
- peer.on("open",()=>{
-   status.textContent="Online — connecting...";
-   connectOther();
- });
+  peer.on("open", () => {
+    status.textContent = "Online — auto connecting...";
+    tryConnectLoop(); // start retry loop
+  });
 
- peer.on("connection",c=>{
-   conn=c;
-   bind();
- });
+  peer.on("connection", c => {
+    console.log("Incoming connection");
+    setupConn(c);
+  });
+
+  peer.on("error", e => {
+    console.log("Peer error:", e);
+  });
 }
 
-function connectOther(){
- if(conn?.open) return;
- const c=peer.connect(other);
- c.on("open",()=>{
-   conn=c;
-   bind();
- });
+/* ---------- AUTO RETRY CONNECT ---------- */
+
+function tryConnectLoop() {
+  if (retryTimer) clearInterval(retryTimer);
+
+  retryTimer = setInterval(() => {
+    if (conn && conn.open) {
+      clearInterval(retryTimer);
+      return;
+    }
+
+    console.log("Trying connect to", other);
+    const c = peer.connect(other, { reliable: true });
+
+    c.on("open", () => {
+      setupConn(c);
+      clearInterval(retryTimer);
+    });
+
+    c.on("error", () => {
+      // ignore — next retry
+    });
+
+  }, 1500); // retry every 1.5 sec
 }
 
-function bind(){
- status.textContent="Connected ✅";
+/* ---------- SETUP CONNECTION ---------- */
 
- conn.on("data",d=>{
-   if(d.type==="msg") add(d.html,false);
- });
+function setupConn(c) {
+
+  // agar already connected hai to extra connection close
+  if (conn && conn.open) {
+    c.close();
+    return;
+  }
+
+  conn = c;
+
+  conn.on("open", () => {
+    status.textContent = "Connected ✅";
+  });
+
+  conn.on("data", d => {
+    if (d.type === "msg") add(d.html, false);
+  });
+
+  conn.on("close", () => {
+    status.textContent = "Disconnected — retrying...";
+    tryConnectLoop();
+  });
 }
 
 /* ---------- UI ---------- */
 
-function add(html,isMe){
- const b=document.createElement("div");
- b.className="bubble "+(isMe?"me":"them");
- b.innerHTML=html;
- chat.appendChild(b);
- chat.scrollTop=999999;
+function add(html, isMe) {
+  const b = document.createElement("div");
+  b.className = "bubble " + (isMe ? "me" : "them");
+  b.innerHTML = html;
+  chat.appendChild(b);
+  chat.scrollTop = chat.scrollHeight;
 }
 
 /* ---------- SEND TEXT ---------- */
 
-send.onclick=()=>{
- if(!conn?.open) return alert("Not connected yet");
- const t=msg.value.trim();
- if(!t) return;
- add(t,true);
- conn.send({type:"msg",html:t});
- msg.value="";
+send.onclick = () => {
+  if (!conn || !conn.open) return alert("Not connected yet");
+
+  const t = msg.value.trim();
+  if (!t) return;
+
+  add(t, true);
+  conn.send({ type: "msg", html: t });
+  msg.value = "";
 };
 
 /* ---------- IMAGE ---------- */
 
-img.onclick=()=>file.click();
+img.onclick = () => file.click();
 
-file.onchange=e=>{
- const f=e.target.files[0];
- const r=new FileReader();
- r.onload=()=>{
-   const html=`<img src="${r.result}">`;
-   add(html,true);
-   conn.send({type:"msg",html});
- };
- r.readAsDataURL(f);
+file.onchange = e => {
+  const f = e.target.files[0];
+  if (!f) return;
+
+  const r = new FileReader();
+  r.onload = () => {
+    const html = `<img src="${r.result}">`;
+    add(html, true);
+    conn.send({ type: "msg", html });
+  };
+  r.readAsDataURL(f);
 };
 
 /* ---------- VOICE ---------- */
 
-let rec,chunks=[];
-voice.onclick=async()=>{
- if(!rec){
-   const s=await navigator.mediaDevices.getUserMedia({audio:true});
-   rec=new MediaRecorder(s);
-   rec.ondataavailable=e=>chunks.push(e.data);
-   rec.onstop=()=>{
-     const blob=new Blob(chunks,{type:"audio/webm"});
-     chunks=[];
-     const r=new FileReader();
-     r.onload=()=>{
-       const html=`<audio controls src="${r.result}"></audio>`;
-       add(html,true);
-       conn.send({type:"msg",html});
-     };
-     r.readAsDataURL(blob);
-   };
-   rec.start();
-   voice.textContent="⏹";
- } else {
-   rec.stop();
-   rec=null;
-   voice.textContent="🎤";
- }
+let rec, chunks = [];
+
+voice.onclick = async () => {
+
+  if (!rec) {
+    const s = await navigator.mediaDevices.getUserMedia({ audio: true });
+    rec = new MediaRecorder(s);
+
+    rec.ondataavailable = e => chunks.push(e.data);
+
+    rec.onstop = () => {
+      const blob = new Blob(chunks, { type: "audio/webm" });
+      chunks = [];
+
+      const r = new FileReader();
+      r.onload = () => {
+        const html = `<audio controls src="${r.result}"></audio>`;
+        add(html, true);
+        conn.send({ type: "msg", html });
+      };
+      r.readAsDataURL(blob);
+    };
+
+    rec.start();
+    voice.textContent = "⏹";
+
+  } else {
+    rec.stop();
+    rec = null;
+    voice.textContent = "🎤";
+  }
 };
 
 </script>
-</body>
-</html>
