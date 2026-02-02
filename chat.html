@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>Auto P2P Chat</title>
+<title>2 User Direct Chat</title>
 <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 
@@ -17,7 +17,6 @@ button{background:#ff4d6d;color:white}
 .bubble{max-width:75%;padding:10px;border-radius:14px;margin:6px 0}
 .me{background:#ff4d6d;margin-left:auto}
 .them{background:#333}
-.meta{font-size:11px;opacity:.7;text-align:right}
 .input{display:flex;gap:6px;padding:8px;background:#222}
 img,audio{max-width:100%}
 </style>
@@ -26,14 +25,13 @@ img,audio{max-width:100%}
 <body>
 
 <div id="login">
-<h3>Auto Chat Login</h3>
-<input id="user" placeholder="Username">
-<input id="pass" type="password" placeholder="Password">
+<h3>Private Chat</h3>
+<input id="user" placeholder="Username (bassu / lucifer)">
 <button id="go">Enter</button>
 </div>
 
 <div id="chatUI">
-<div class="header" id="title"></div>
+<div class="header" id="status">Connecting...</div>
 <div id="chat"></div>
 <div class="input">
 <input id="msg" placeholder="Message">
@@ -46,125 +44,78 @@ img,audio{max-width:100%}
 
 <script>
 
-/* ---------- AUTO ROOM FROM URL ---------- */
+let me, other, peer, conn;
 
-const params = new URLSearchParams(location.search);
-const room = params.get("room") || "basundi";
-title.textContent="Room: "+room;
+go.onclick=()=>{
+ me=user.value.toLowerCase().trim();
 
-/* ---------- HASH LOGIN ---------- */
+ if(me!=="bassu" && me!=="lucifer"){
+   alert("Use bassu or lucifer");
+   return;
+ }
 
-async function hash(t){
- const b=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(t));
- return btoa(String.fromCharCode(...new Uint8Array(b)));
-}
+ other = me==="bassu" ? "lucifer" : "bassu";
 
-async function ok(u,p){
- const k="u_"+u;
- const h=await hash(p);
- if(!localStorage[k]) localStorage[k]=h;
- return localStorage[k]===h;
-}
+ login.style.display="none";
+ chatUI.style.display="flex";
 
-/* ---------- STATE ---------- */
-
-let me, peer, conns={};
-
-/* ---------- LOGIN ---------- */
-
-go.onclick=async()=>{
- if(await ok(user.value,pass.value)){
-   me=user.value;
-   login.style.display="none";
-   chatUI.style.display="flex";
-   load();
-   startPeer();
- } else alert("Wrong password");
+ startPeer();
 };
-
-/* ---------- STORAGE ---------- */
-
-const sk=()=> "hist_"+room+"_"+me;
-const save=()=>localStorage.setItem(sk(),chat.innerHTML);
-const load=()=>chat.innerHTML=localStorage.getItem(sk())||"";
-
-/* ---------- PEER AUTO ---------- */
 
 function startPeer(){
 
- peer=new Peer(room+"_HOST",{host:"peerjs.com",port:443,secure:true});
-
- peer.on("open",()=>{});
-
- peer.on("error",()=>{
-   peer=new Peer(room+"_"+Math.random().toString(36).slice(2,6),
-     {host:"peerjs.com",port:443,secure:true});
-
-   peer.on("open",()=>{
-     const c=peer.connect(room+"_HOST");
-     c.on("open",()=>bind(c));
-   });
+ peer=new Peer(me,{
+   host:"peerjs.com",
+   port:443,
+   secure:true
  });
 
- peer.on("connection",bind);
+ peer.on("open",()=>{
+   status.textContent="Online — connecting...";
+   connectOther();
+ });
+
+ peer.on("connection",c=>{
+   conn=c;
+   bind();
+ });
 }
 
-function bind(c){
- conns[c.peer]=c;
- c.on("data",recv);
+function connectOther(){
+ if(conn?.open) return;
+ const c=peer.connect(other);
+ c.on("open",()=>{
+   conn=c;
+   bind();
+ });
 }
 
-/* ---------- SEND ALL ---------- */
+function bind(){
+ status.textContent="Connected ✅";
 
-function sendAll(o){
- Object.values(conns).forEach(c=>c.open&&c.send(o));
-}
-
-/* ---------- ENCODE ---------- */
-
-const enc=t=>btoa(unescape(encodeURIComponent(t)));
-const dec=t=>decodeURIComponent(escape(atob(t)));
-
-/* ---------- RECEIVE ---------- */
-
-function recv(d){
- if(d.type==="msg"){
-   add(dec(d.text),false,d.id,d.user);
-   sendAll({type:"seen",id:d.id});
- }
- if(d.type==="seen") meta(d.id,"👁");
+ conn.on("data",d=>{
+   if(d.type==="msg") add(d.html,false);
+ });
 }
 
 /* ---------- UI ---------- */
 
-function ts(){
- return new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
-}
-
-function add(t,mef,id,u){
+function add(html,isMe){
  const b=document.createElement("div");
- b.className="bubble "+(mef?"me":"them");
- b.dataset.id=id;
- b.innerHTML=t+`<div class="meta" id="m${id}">
- ${mef?"✓":u} • ${ts()}</div>`;
+ b.className="bubble "+(isMe?"me":"them");
+ b.innerHTML=html;
  chat.appendChild(b);
  chat.scrollTop=999999;
- save();
 }
 
-function meta(id,x){
- const m=document.getElementById("m"+id);
- if(m) m.textContent=x+" • "+ts();
-}
-
-/* ---------- SEND ---------- */
+/* ---------- SEND TEXT ---------- */
 
 send.onclick=()=>{
+ if(!conn?.open) return alert("Not connected yet");
  const t=msg.value.trim();
  if(!t) return;
- const id=Date.now();
- add(t,true,id,me);
- sendAll({type:"msg",text:enc(t),id,user:me});
+ add(t,true);
+ conn.send({type:"msg",html:t});
  msg.value="";
 };
 
@@ -174,13 +125,11 @@ img.onclick=()=>file.click();
 
 file.onchange=e=>{
  const f=e.target.files[0];
- if(!f) return;
  const r=new FileReader();
  r.onload=()=>{
    const html=`<img src="${r.result}">`;
-   const id=Date.now();
-   add(html,true,id,me);
-   sendAll({type:"msg",text:enc(html),id,user:me});
+   add(html,true);
+   conn.send({type:"msg",html});
  };
  r.readAsDataURL(f);
 };
@@ -199,9 +148,8 @@ voice.onclick=async()=>{
      const r=new FileReader();
      r.onload=()=>{
        const html=`<audio controls src="${r.result}"></audio>`;
-       const id=Date.now();
-       add(html,true,id,me);
-       sendAll({type:"msg",text:enc(html),id,user:me});
+       add(html,true);
+       conn.send({type:"msg",html});
      };
      r.readAsDataURL(blob);
    };
