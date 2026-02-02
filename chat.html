@@ -1,172 +1,209 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>2 User Direct Chat</title>
+<script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<style>
+body{margin:0;font-family:Arial;background:#111;color:white}
+#chatUI{display:flex;height:100vh;flex-direction:column}
+.header{background:#222;padding:10px;text-align:center}
+#chat{flex:1;overflow:auto;padding:10px}
+.bubble{max-width:75%;padding:10px;border-radius:14px;margin:6px 0}
+.me{background:#ff4d6d;margin-left:auto}
+.them{background:#333}
+.input{display:flex;gap:6px;padding:8px;background:#222}
+input,button{padding:12px;border:none;border-radius:10px;font-size:16px}
+button{background:#ff4d6d;color:white}
+img,audio{max-width:100%}
+</style>
+</head>
+
+<body>
+
+<div id="chatUI">
+<div class="header" id="status">Starting...</div>
+<div id="chat"></div>
+<div class="input">
+<input id="msg" placeholder="Message">
+<button id="send">Send</button>
+<button id="voice">🎤</button>
+<input type="file" id="file" hidden accept="image/*">
+<button id="img">📷</button>
+</div>
+</div>
+
 <script>
 
-let me, other, peer, conn;
-let retryTimer = null;
+const me = location.hash.replace("#","") || "bassu";
+const other = me === "bassu" ? "lucifer" : "bassu";
 
-go.onclick = () => {
-  me = user.value.toLowerCase().trim();
+let peer, conn;
+let retryTimer;
+let pending = [];
 
-  if (me !== "bassu" && me !== "lucifer") {
-    alert("Use bassu or lucifer");
-    return;
-  }
+/* ---------- START ---------- */
 
-  other = me === "bassu" ? "lucifer" : "bassu";
+startPeer();
 
-  login.style.display = "none";
-  chatUI.style.display = "flex";
+function startPeer(){
 
-  startPeer();
-};
+ peer = new Peer(me,{
+   host:"peerjs.com",
+   port:443,
+   secure:true
+ });
 
-function startPeer() {
+ peer.on("open",()=>{
+   status.textContent = "Online — connecting...";
+   connectLoop();
+ });
 
-  peer = new Peer(me, {
-    host: "peerjs.com",
-    port: 443,
-    secure: true
-  });
-
-  peer.on("open", () => {
-    status.textContent = "Online — auto connecting...";
-    tryConnectLoop(); // start retry loop
-  });
-
-  peer.on("connection", c => {
-    console.log("Incoming connection");
-    setupConn(c);
-  });
-
-  peer.on("error", e => {
-    console.log("Peer error:", e);
-  });
+ peer.on("connection", c=>{
+   setupConn(c);
+ });
 }
 
-/* ---------- AUTO RETRY CONNECT ---------- */
+/* ---------- AUTO CONNECT LOOP ---------- */
 
-function tryConnectLoop() {
-  if (retryTimer) clearInterval(retryTimer);
+function connectLoop(){
 
-  retryTimer = setInterval(() => {
-    if (conn && conn.open) {
-      clearInterval(retryTimer);
-      return;
-    }
+ retryTimer = setInterval(()=>{
 
-    console.log("Trying connect to", other);
-    const c = peer.connect(other, { reliable: true });
+   if(conn && conn.open){
+     clearInterval(retryTimer);
+     return;
+   }
 
-    c.on("open", () => {
-      setupConn(c);
-      clearInterval(retryTimer);
-    });
+   const c = peer.connect(other);
 
-    c.on("error", () => {
-      // ignore — next retry
-    });
+   c.on("open",()=>{
+     setupConn(c);
+     clearInterval(retryTimer);
+   });
 
-  }, 1500); // retry every 1.5 sec
+ },1500);
 }
 
 /* ---------- SETUP CONNECTION ---------- */
 
-function setupConn(c) {
+function setupConn(c){
 
-  // agar already connected hai to extra connection close
-  if (conn && conn.open) {
-    c.close();
-    return;
-  }
+ if(conn && conn.open){
+   c.close();
+   return;
+ }
 
-  conn = c;
+ conn = c;
 
-  conn.on("open", () => {
-    status.textContent = "Connected ✅";
-  });
+ conn.on("open",()=>{
+   status.textContent="Connected ✅";
+   flushPending();
+ });
 
-  conn.on("data", d => {
-    if (d.type === "msg") add(d.html, false);
-  });
+ conn.on("data",d=>{
+   if(d.type==="msg") add(d.html,false);
+ });
 
-  conn.on("close", () => {
-    status.textContent = "Disconnected — retrying...";
-    tryConnectLoop();
-  });
+ conn.on("close",()=>{
+   status.textContent="Disconnected — retrying...";
+   connectLoop();
+ });
+}
+
+/* ---------- PENDING SEND ---------- */
+
+function sendData(data){
+
+ if(conn && conn.open){
+   conn.send(data);
+ } else {
+   pending.push(data);
+ }
+}
+
+function flushPending(){
+ while(pending.length){
+   conn.send(pending.shift());
+ }
 }
 
 /* ---------- UI ---------- */
 
-function add(html, isMe) {
-  const b = document.createElement("div");
-  b.className = "bubble " + (isMe ? "me" : "them");
-  b.innerHTML = html;
-  chat.appendChild(b);
-  chat.scrollTop = chat.scrollHeight;
+function add(html,isMe){
+ const b=document.createElement("div");
+ b.className="bubble "+(isMe?"me":"them");
+ b.innerHTML=html;
+ chat.appendChild(b);
+ chat.scrollTop=chat.scrollHeight;
 }
 
-/* ---------- SEND TEXT ---------- */
+/* ---------- TEXT ---------- */
 
-send.onclick = () => {
-  if (!conn || !conn.open) return alert("Not connected yet");
+send.onclick=()=>{
+ const t=msg.value.trim();
+ if(!t) return;
 
-  const t = msg.value.trim();
-  if (!t) return;
-
-  add(t, true);
-  conn.send({ type: "msg", html: t });
-  msg.value = "";
+ add(t,true);
+ sendData({type:"msg",html:t});
+ msg.value="";
 };
 
 /* ---------- IMAGE ---------- */
 
-img.onclick = () => file.click();
+img.onclick=()=>file.click();
 
-file.onchange = e => {
-  const f = e.target.files[0];
-  if (!f) return;
+file.onchange=e=>{
+ const f=e.target.files[0];
+ if(!f) return;
 
-  const r = new FileReader();
-  r.onload = () => {
-    const html = `<img src="${r.result}">`;
-    add(html, true);
-    conn.send({ type: "msg", html });
-  };
-  r.readAsDataURL(f);
+ const r=new FileReader();
+ r.onload=()=>{
+   const html=`<img src="${r.result}">`;
+   add(html,true);
+   sendData({type:"msg",html});
+ };
+ r.readAsDataURL(f);
 };
 
 /* ---------- VOICE ---------- */
 
-let rec, chunks = [];
+let rec,chunks=[];
 
-voice.onclick = async () => {
+voice.onclick=async()=>{
 
-  if (!rec) {
-    const s = await navigator.mediaDevices.getUserMedia({ audio: true });
-    rec = new MediaRecorder(s);
+ if(!rec){
 
-    rec.ondataavailable = e => chunks.push(e.data);
+   const s=await navigator.mediaDevices.getUserMedia({audio:true});
+   rec=new MediaRecorder(s);
 
-    rec.onstop = () => {
-      const blob = new Blob(chunks, { type: "audio/webm" });
-      chunks = [];
+   rec.ondataavailable=e=>chunks.push(e.data);
 
-      const r = new FileReader();
-      r.onload = () => {
-        const html = `<audio controls src="${r.result}"></audio>`;
-        add(html, true);
-        conn.send({ type: "msg", html });
-      };
-      r.readAsDataURL(blob);
-    };
+   rec.onstop=()=>{
+     const blob=new Blob(chunks,{type:"audio/webm"});
+     chunks=[];
+     const r=new FileReader();
+     r.onload=()=>{
+       const html=`<audio controls src="${r.result}"></audio>`;
+       add(html,true);
+       sendData({type:"msg",html});
+     };
+     r.readAsDataURL(blob);
+   };
 
-    rec.start();
-    voice.textContent = "⏹";
+   rec.start();
+   voice.textContent="⏹";
 
-  } else {
-    rec.stop();
-    rec = null;
-    voice.textContent = "🎤";
-  }
+ } else {
+   rec.stop();
+   rec=null;
+   voice.textContent="🎤";
+ }
 };
 
 </script>
+</body>
+</html>
